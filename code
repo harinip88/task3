@@ -1,45 +1,80 @@
-# Step 1: Install dependencies
-!pip install flask flask-login pyngrok
+# Step 1: Install required packages
+!pip install flask flask-ngrok
 
-# Step 2: Setup ngrok auth token
-from pyngrok import ngrok, conf
-conf.get_default().auth_token = "2xfWTAkIKHIrQpfocuymht5ykk8_3RWRnh8XWH2KPKChXvJhh"  # <-- Replace this
+# Step 2: Create the Flask app with basic e-commerce features
+from flask import Flask, render_template_string, request, redirect, url_for
+from flask_ngrok import run_with_ngrok
 
-# Step 3: Build the Flask App
-import os
-from flask import Flask, request, redirect, url_for, render_template_string, session
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+app = Flask(__name__)
+run_with_ngrok(app)
 
-# Initialize app
-app = Flask(_name_)
-app.secret_key = os.urandom(24)
+# Sample products
+products = [
+    {"id": 1, "name": "Handmade Mug", "price": 12.99, "desc": "Ceramic mug made locally", "image": "https://via.placeholder.com/150"},
+    {"id": 2, "name": "Wooden Spoon", "price": 5.99, "desc": "Hand-carved from oak", "image": "https://via.placeholder.com/150"},
+    {"id": 3, "name": "Local Honey", "price": 9.49, "desc": "Organic honey from nearby farms", "image": "https://via.placeholder.com/150"},
+]
 
-# Login manager
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
+cart = {}
 
-# In-memory storage
-admin_credentials = {'admin': 'admin123'}  # username: password
-employees = {}  # id: {name, role, email}
-next_id = 1
+# HTML Templates
+main_template = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Local Store</title>
+    <style>
+        body { font-family: Arial; }
+        .product { border: 1px solid #ccc; padding: 10px; margin: 10px; display: inline-block; width: 200px; }
+        img { width: 100%; }
+    </style>
+</head>
+<body>
+<h2>Local Store</h2>
+{% for p in products %}
+<div class="product">
+    <img src="{{ p.image }}" alt="{{ p.name }}">
+    <h3>{{ p.name }}</h3>
+    <p>{{ p.desc }}</p>
+    <p><b>${{ p.price }}</b></p>
+    <form action="/add/{{ p.id }}" method="post">
+        <button type="submit">Add to Cart</button>
+    </form>
+</div>
+{% endfor %}
 
-# User class
-class Admin(UserMixin):
-    def _init_(self, username):
-        self.id = username
+<h3><a href="/cart">View Cart ({{ cart_size }})</a></h3>
+</body>
+</html>
+'''
 
-@login_manager.user_loader
-def load_user(user_id):
-    if user_id in admin_credentials:
-        return Admin(user_id)
-    return None
+cart_template = '''
+<h2>Your Cart</h2>
+<ul>
+{% for item, qty in cart.items() %}
+    <li>{{ item.name }} - {{ qty }} x ${{ item.price }} = ${{ "%.2f"|format(qty * item.price) }}</li>
+{% endfor %}
+</ul>
+<p><b>Total: ${{ "%.2f"|format(total) }}</b></p>
+<a href="/">Continue Shopping</a>
+'''
 
-# HTML layout
-def render_page(title, body):
-    return render_template_string(f"""
-    <!DOCTYPE html><html><head><title>{title}</title></head><body>
-    <h2>{title}</h2>
-    {body}
-    </body></html>
-    """)
+@app.route("/")
+def home():
+    cart_size = sum(cart.values())
+    return render_template_string(main_template, products=products, cart_size=cart_size)
+
+@app.route("/add/<int:pid>", methods=["POST"])
+def add_to_cart(pid):
+    prod = next((p for p in products if p["id"] == pid), None)
+    if prod:
+        cart[pid] = cart.get(pid, 0) + 1
+    return redirect(url_for("home"))
+
+@app.route("/cart")
+def show_cart():
+    items = {p: cart[p["id"]] for p in products if p["id"] in cart}
+    total = sum(p["price"] * qty for p, qty in items.items())
+    return render_template_string(cart_template, cart=items, total=total)
+
+app.run()
